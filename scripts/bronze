@@ -1,1 +1,83 @@
+-- to create the database with the name of datawarehouse
+create database datawarehouse
 
+-- to use
+use datawarehouse
+-- create schemas for different medallion architecture
+create schema bronze
+create schema silver
+create schema gold
+use bronze
+-- our source systems are CRM and erp. In each we have 3 files for that we are gonna create the table
+-- to create the table1
+create table bronze.crm_cust_info(
+cst_id int,
+cst_key	varchar(50),
+cst_firstname varchar(50),
+cst_lastname varchar(50),	
+cst_marital_status varchar(50),	
+cst_gndr varchar(50),	
+cst_create_date date
+)
+-- create the table 2
+create table bronze.crm_prd_info(
+prd_id int,
+prd_key	varchar(50),
+prd_nm varchar(50),
+prd_cost int,	
+prd_line varchar(50),	
+prd_start_dt datetime,	
+prd_end_dt datetime
+)
+-- create the table 3
+create table bronze.crm_sales_details(
+sls_ord_num varchar(50),	
+sls_prd_key varchar(50),	
+sls_cust_id int,
+sls_order_dt int,
+sls_ship_dt int,	
+sls_due_dt int,	
+sls_sales int,	
+sls_quantity int,	
+sls_price int
+)
+-- create the table 4 for erp
+create table bronze.erp_loc_a101(
+CID varchar(50),
+CNTRY varchar(50)
+)
+-- create the table 5
+create table bronze.erp_cust_az12(
+
+CID varchar(50),	
+BDATE date,
+GEN varchar(50)
+)
+-- create the table 6
+create table bronze.erp_px_cat_g1v2(
+ID varchar(50),
+CAT varchar(50),
+SUBCAT varchar(50),
+MAINTENANCE varchar(50)
+)
+-- to verfiy the tables. all are empty
+show tables
+-- now we are going to inser the bulk data to the table through csv files
+-- the table 1 (crm_cust_info), i have imported the data, to check use the below query
+select * from crm_cust_info
+limit 10
+-- make sure all the data are imported and check the count of the rows whether it is equal on both the raw file and imported file count
+select count(*) from crm_cust_info
+-- suppose if import twice use the below query (Truncate just empty the table not delete the whole table)
+truncate table crm_cust_info
+-- now if you check the count it shows 0
+select count(*) from crm_cust_info
+-- so you have to import again 
+-- imported successfully now i am going to import the data for the remaining 5 tables
+-- now i am going to check the count of imported data from csv files
+select count(*) from crm_cust_info;
+select count(*) from crm_prd_info;
+select count(*) from crm_sales_details;
+select count(*) from erp_cust_az12;
+select count(*) from erp_loc_a101;
+select count(*) from erp_px_cat_g1v2;

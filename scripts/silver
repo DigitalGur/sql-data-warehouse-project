@@ -1,1 +1,615 @@
+-- pimary key is cst_id, cst_key
 
+-- to understand the product info
+select * from bronze.crm_prd_info
+limit 10;
+-- key column is prd_key
+
+-- to undersatnd the sales details
+select * from bronze.crm_sales_details
+limit 10;
+-- key column is sls_prd_key, sls_cust_id
+
+-- to understand the erp cust information
+select * from bronze.erp_cust_az12
+limit 10;
+-- the key column is cid 
+
+-- to understand the erp location
+select * from bronze.erp_loc_a101
+limit 10;
+-- the key column is cid 
+
+-- to understand the erp prd detail
+select* from bronze.erp_px_cat_g1v2
+limit 10;
+-- the key column is id 
+-- now we are gonna use the silver schema
+use silver
+
+create table silver.crm_cust_info(
+cst_id int,
+cst_key	varchar(50),
+cst_firstname varchar(50),
+cst_lastname varchar(50),	
+cst_marital_status varchar(50),	
+cst_gndr varchar(50),	
+cst_create_date date,
+dwh_createdate datetime default now()
+)
+-- create the table 2
+create table silver.crm_prd_info(
+prd_id int,
+prd_key	varchar(50),
+prd_nm varchar(50),
+prd_cost int,	
+prd_line varchar(50),	
+prd_start_dt datetime,	
+prd_end_dt datetime,
+dwh_createdate datetime default now()
+)
+-- create the table 3
+create table silver.crm_sales_details(
+sls_ord_num varchar(50),	
+sls_prd_key varchar(50),	
+sls_cust_id int,
+sls_order_dt int,
+sls_ship_dt int,	
+sls_due_dt int,	
+sls_sales int,	
+sls_quantity int,	
+sls_price int,
+dwh_createdate datetime default now()
+)
+-- create the table 4 for erp
+create table silver.erp_loc_a101(
+CID varchar(50),
+CNTRY varchar(50),
+dwh_createdate datetime default now()
+)
+-- create the table 5
+create table silver.erp_cust_az12(
+CID varchar(50),	
+BDATE date,
+GEN varchar(50),
+dwh_createdate datetime default now()
+)
+-- create the table 6
+create table silver.erp_px_cat_g1v2(
+ID varchar(50),
+CAT varchar(50),
+SUBCAT varchar(50),
+MAINTENANCE varchar(50),
+dwh_createdate datetime default now()
+)
+
+-- i forgot to add one thing so i am gonna drop the created table
+Drop table silver.crm_cust_info
+Drop Table silver.erp_loc_a101
+Drop Table silver.erp_cust_az12
+Drop Table silver.crm_prd_info
+Drop Table silver.crm_sales_details
+Drop table silver.erp_px_cat_g1v2
+
+
+-- now i have inserted the table
+--------------
+-- before importing we have to check the quality of data in bronze, so i am gonna check each table (all the 6)
+use bronze
+-- 1st table
+select * from bronze.crm_cust_info
+limit 10;
+
+-- To check the nulls in the primary key for this table
+select count(*) as totalvalues, count(cst_id) as tocheckduplicates, (count(*) - count(cst_id)) as totalnullvalues
+from bronze.crm_cust_info;
+
+-- another ways to check the null 
+select cst_id from bronze.crm_cust_info
+where cst_id is null;
+
+select * from bronze.crm_cust_info
+where cst_id is null;
+
+-- to check the duplicates in the primary key for this table
+select cst_id, count(*) as tocheckduplicates
+from bronze.crm_cust_info
+group by cst_id
+having count(*) > 1
+order by tocheckduplicates desc;
+
+-- another way to check the duplicates
+select * from(
+select 
+cst_id,
+count(*) over(partition by cst_id) as tocheckduplicates 
+from bronze.crm_cust_info) t
+where tocheckduplicates > 1
+order by tocheckduplicates desc
+
+-- 
+select * from(
+select *,
+row_number() over(partition by cst_id order by cst_create_date desc) as flagvalue
+ from bronze.crm_cust_info) t
+ where flagvalue > 1
+ 
+--- No duplicates
+select * from(
+select *,
+row_number() over(partition by cst_id order by cst_create_date desc) as flagvalue
+ from bronze.crm_cust_info) t
+ where flagvalue = 1
+ 
+ -- check the unwanted spaces in first_name
+SELECT 
+    cst_firstname,
+    CHAR_LENGTH(cst_firstname) AS namelen,
+    CHAR_LENGTH(TRIM(cst_firstname)) AS correctname
+FROM bronze.crm_cust_info
+where  CHAR_LENGTH(cst_firstname) != CHAR_LENGTH(TRIM(cst_firstname))
+
+ select 
+ char_length(cst_lastname) as lastnamelen,
+ char_length(trim(cst_lastname)) as correctlen,
+ char_length(cst_marital_status) as maritallen,
+ char_length(trim(cst_marital_status)) as final,
+ char_length(cst_gndr) as gndrlen,
+ char_length(trim(cst_gndr)) as gndrcrctlen
+ from bronze.crm_cust_info
+ where 
+  char_length(cst_lastname) !=  char_length(trim(cst_lastname)) or
+  char_length(cst_marital_status) !=  char_length(trim(cst_marital_status)) or
+   char_length(cst_gndr) != char_length(trim(cst_gndr))
+   -- to check gender column
+  select 
+ char_length(cst_gndr) as gndrlen,
+ char_length(trim(cst_gndr)) as gndrcrctlen
+ from bronze.crm_cust_info
+ where  char_length(cst_gndr) != char_length(trim(cst_gndr))
+ 
+ -- now i want the cleaned data
+ select 
+ cst_id,
+ cst_key,
+ trim(cst_firstname) as cst_firstname,
+ trim(cst_lastname) as cst_lastname,
+ case 
+	when cst_marital_status = "s" then "single"
+    when cst_marital_status = "m" then "married"
+    else "n/a"
+end as cst_marital_status,
+	case 
+    when cst_gndr = "f" then "female"
+    when cst_gndr = "m" then "Male"
+    else "unknown"
+end as  cst_gndr,
+ cst_create_date
+ from (
+	select *,
+row_number() over(partition by cst_id order by cst_create_date desc) as flagvalue
+ from bronze.crm_cust_info) t 
+ where flagvalue = 1
+ 
+ -- check data standarization
+ select distinct cst_gndr from bronze.crm_cust_info
+ 
+ -- insert the data into silver crm
+ insert into silver.crm_cust_info(
+ cst_id,
+ cst_key,
+ cst_firstname,
+ cst_lastname,
+ cst_marital_status,
+ cst_gndr,
+ cst_create_date)
+ 
+  select 
+ cst_id,
+ cst_key,
+ trim(cst_firstname) as cst_firstname,
+ trim(cst_lastname) as cst_lastname,
+ case 
+	when cst_marital_status = "s" then "single"
+    when cst_marital_status = "m" then "married"
+    else "n/a"
+end as cst_marital_status,
+	case 
+    when cst_gndr = "f" then "female"
+    when cst_gndr = "m" then "Male"
+    else "unknown"
+end as  cst_gndr,
+ cst_create_date
+ from (
+	select *,
+row_number() over(partition by cst_id order by cst_create_date desc) as flagvalue
+ from bronze.crm_cust_info) t 
+ where flagvalue = 1
+ 
+ select * from silver.crm_cust_info
+ limit 10;
+ 
+ -- to check the duplicates in silver loaded data
+ select * from (
+ select 
+ cst_id,
+ count(*) over(partition by cst_id) as tocheckduplicates
+ from silver.crm_cust_info ) t
+ where tocheckduplicates > 1
+ 
+ select * from silver.crm_cust_info
+ where cst_id is null
+
+
+-- Move into the second table
+SELECT 
+prd_id,
+prd_key,
+substring(prd_key,1, 4) as cat_id,
+prd_nm,
+prd_cost,
+prd_line,
+prd_start_dt,
+prd_end_dt
+FROM bronze.crm_prd_info;
+
+-- to check the null 
+select 
+count(*) as allvalue, 
+count(prd_id) as tochecknull,
+(count(*) - count(prd_id)) as nullvalue
+from  bronze.crm_prd_info;
+
+select * from bronze.crm_prd_info
+where prd_id is null
+
+-- to check the duplicates
+select prd_id, count(*) as tocheckduplic
+from bronze.crm_prd_info
+group by prd_id
+having count(*) > 1
+
+-- another way
+select * from (
+select *,
+count(*) over(partition by prd_id) as tocheckduplic
+from  bronze.crm_prd_info ) t
+where tocheckduplic > 1
+
+select distinct id from bronze.erp_px_cat_g1v2
+
+SELECT 
+prd_id,
+prd_key,
+replace(substring(prd_key,1, 5),"-" , "_") as cat_id,
+substring(prd_key,7, char_length(prd_key)) as prd_key,
+prd_nm,
+prd_cost,
+case 
+	when prd_line = "M" then "Mountain"
+	when prd_line = "s" then "Othersales"
+	when prd_line = "R" then "Road"
+	when prd_line = "T" then "Touring"
+    else "N/A"
+end as prd_line,
+prd_start_dt,
+prd_end_dt
+FROM bronze.crm_prd_info;
+
+-- to check unwanted spaces in prd_nm
+select 
+char_length(prd_nm) as len,
+char_length(trim(prd_nm)) as orginallen
+from bronze.crm_prd_info
+where char_length(prd_nm) != char_length(trim(prd_nm))
+
+-- to check negative numbers
+select * from bronze.crm_prd_info
+where prd_cost < 0 
+
+-- to check the prdcst any null values
+select * from bronze.crm_prd_info
+where prd_cost is null;
+
+select * from bronze.crm_prd_info
+where prd_line is null;
+
+select distinct prd_line from bronze.crm_prd_info;
+
+-- isnset the data
+create table silver.crm_prd_info(
+prd_id int,
+cat_id varchar(50),
+prd_key varchar(50),
+prd_nm varchar(50),
+prd_cost int,	
+prd_line varchar(50),	
+prd_start_dt date,	
+prd_end_dt date,
+dwh_createdate datetime default now()
+)
+select * from silver.crm_cust_info
+limit 10
+-- now drop the table because we changed few data types
+Drop table silver.crm_prd_info
+
+insert into silver.crm_prd_info(
+prd_id,
+cat_id,
+prd_key,
+prd_nm,
+prd_cost,	
+prd_line,	
+prd_start_dt,	
+)
+SELECT 
+prd_id,
+replace(substring(prd_key,1, 5),"-" , "_") as cat_id,
+substring(prd_key,7, char_length(prd_key)) as prd_key,
+prd_nm,
+prd_cost,
+prd_line,
+cast(prd_start_dt as date) as prd_start_dt ,
+cast(DATE_SUB(
+        LEAD(prd_start_dt) OVER(PARTITION BY prd_key ORDER BY prd_start_dt), 
+        INTERVAL 1 DAY)
+    as date) AS prd_end_dt
+FROM bronze.crm_prd_info;
+
+select * from bronze.crm_prd_info;
+
+INSERT INTO silver.crm_prd_info (
+    prd_id,
+    cat_id,
+    prd_key,
+    prd_nm,
+    prd_cost,	
+    prd_line,	
+    prd_start_dt,	
+    prd_end_dt
+)
+SELECT 
+    prd_id,
+    REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+    SUBSTRING(prd_key, 7) AS prd_key, -- Removed 3rd argument to prevent character cutoff
+    prd_nm,
+    prd_cost,
+    prd_line,
+    CAST(prd_start_dt AS DATE) AS prd_start_dt,
+    -- Fixed the parenthesis sequence for DATE_SUB and CAST
+    CAST(
+        DATE_SUB(
+            LEAD(prd_start_dt) OVER(PARTITION BY prd_key ORDER BY prd_start_dt), 
+            INTERVAL 1 DAY
+        ) AS DATE
+    ) AS prd_end_dt
+FROM bronze.crm_prd_info;
+
+select * from silver.crm_prd_info
+-- to check the duplicates
+select 
+prd_id,
+count(*) as count
+from silver.crm_prd_info
+group by prd_id
+having count(*) > 1
+
+-- to check the nulls
+select prd_id
+from silver.crm_prd_info
+where prd_id is null
+
+
+-- move on to the third table
+create table silver.crm_sales_details(
+sls_ord_num varchar(50),	
+sls_prd_key varchar(50),	
+sls_cust_id int,
+sls_order_dt date,
+sls_ship_dt date,	
+sls_due_dt date,	
+sls_sales int,	
+sls_quantity int,	
+sls_price int,
+dwh_createdate datetime default now()
+)
+
+drop table silver.crm_sales_details
+
+-- check the unwanted space
+select nullif(sls_order_dt, 0) as sls_order_dt from bronze.crm_sales_details
+where sls_ord_num is null
+
+select sls_order_dt from bronze.crm_sales_details
+where char_length(sls_order_dt) != 8
+
+-- order date greater than ship date or due date
+select * from bronze.crm_sales_details
+where sls_order_dt > sls_ship_dt or sls_order_dt > sls_due_dt
+
+select 
+sls_sales,
+sls_quantity,
+sls_price,
+case 
+	when sls_sales <= 0 or sls_sales is null or sls_sales != sls_quantity * abs(sls_price) then sls_quantity * abs(sls_price)
+    else sls_sales
+end as sls_sales, 
+case 
+	when sls_price is null or sls_price <= 0 then sls_sales / sls_quantity
+    else sls_price
+end as sls_price,
+from bronze.crm_sales_details
+where sls_sales != sls_quantity * sls_price
+or
+sls_sales is null or
+sls_quantity is null or
+sls_price is null or
+sls_sales <=0 or
+sls_quantity <=0 or
+sls_price <=0
+
+-- insert the clean data
+insert into silver.crm_sales_details(
+sls_ord_num,	
+sls_prd_key,	
+sls_cust_id,
+sls_order_dt,
+sls_ship_dt,	
+sls_due_dt,	
+sls_sales,	
+sls_quantity,	
+sls_price
+)
+select 
+sls_ord_num,	
+sls_prd_key,	
+sls_cust_id,
+case 
+	when sls_order_dt = 0 or char_length(sls_order_dt) != 8 then Null
+    else cast(sls_order_dt as date)
+end as sls_order_dt,
+case 
+	when sls_ship_dt = 0 or char_length(sls_ship_dt) != 8 then Null
+    else cast(sls_ship_dt as date)
+end as sls_ship_dt,
+case 
+	when sls_due_dt = 0 or char_length(sls_due_dt) != 8 then Null
+    else cast(sls_due_dt as date)
+end as sls_due_dt,	
+case 
+	when sls_sales <= 0 or sls_sales is null or sls_sales != sls_quantity * abs(sls_price) then sls_quantity * abs(sls_price)
+    else sls_sales
+end as sls_sales, 
+sls_quantity,	
+case 
+	when sls_price is null or sls_price <= 0 then sls_sales / nullif(sls_quantity,0)
+    else sls_price
+end as sls_price
+from bronze.crm_sales_details
+
+-- to check the issues
+select * from silver.crm_sales_details
+where sls_sales != sls_quantity * sls_price
+or
+sls_sales is null or
+sls_quantity is null or
+sls_price is null or
+sls_sales <=0 or
+sls_quantity <=0 or
+sls_price <=0
+
+-- moving into the 4th data
+create table silver.erp_cust_az12(
+CID varchar(50),	
+BDATE date,
+GEN varchar(50),
+dwh_createdate datetime default now()
+)
+
+-- check the data
+select 
+distinct GEN,
+case 
+	when gen in ("M" , "Male") then "Male"
+    when gen in ("F" , "female") then "Female"
+    Else "N/A"
+end as gen1
+from bronze.erp_cust_az12
+
+-- insert the data
+insert into silver. erp_cust_az12(
+CID,	
+BDATE,
+GEN
+)
+select 
+case 
+	when cid like "NAS%" then substring(cid, 4, char_length(cid))
+    else cid
+end as cid,
+case 
+	when bdate > now() then null
+    else bdate
+end as BDATE,
+case 
+	when gen in ("M" , "Male") then "Male"
+    when gen in ("F" , "female") then "Female"
+    Else "N/A"
+end as gen
+from bronze.erp_cust_az12
+
+-- check the quality
+select * from silver.erp_cust_az12
+where bdate > now()
+
+select distinct gen from silver.erp_cust_az12
+
+-- move into 5 table
+create table silver.erp_loc_a101(
+CID varchar(50),
+CNTRY varchar(50),
+dwh_createdate datetime default now()
+)
+-- check the data
+Select
+distinct CNTRY,
+case 
+	when cntry = "US" THEN "United States of America"
+    when cntry in ("DE", "Germany") then "Germany"
+    else cntry
+end as cntry1
+from bronze.erp_loc_a101
+
+-- insert the data
+insert into silver.erp_loc_a101(
+CID,
+CNTRY
+)
+select 
+replace(CID, "-" ,"") as cid,
+case 
+	when cntry = "US" THEN "United States of America"
+    when cntry in ("DE", "Germany") then "Germany"
+    else cntry
+end as cntry
+from bronze.erp_loc_a101
+
+-- check the quality
+select * from silver.erp_loc_a101
+
+-- move to the 6th table
+create table silver.erp_px_cat_g1v2(
+ID varchar(50),
+CAT varchar(50),
+SUBCAT varchar(50),
+MAINTENANCE varchar(50),
+dwh_createdate datetime default now()
+)
+
+select 
+ID,
+CAT,
+SUBCAT,
+MAINTENANCE
+from bronze.erp_px_cat_g1v2
+
+-- Check unwanted spaces
+select * from bronze.erp_px_cat_g1v2
+where cat != trim(cat) or subcat != trim(SUBCAT)
+
+-- insert the data
+insert into silver.erp_px_cat_g1v2(
+ID,
+CAT,
+SUBCAT,
+MAINTENANCE
+)
+select 
+ID,
+CAT,
+SUBCAT,
+MAINTENANCE
+from bronze.erp_px_cat_g1v2
+-- check the data
+select * from silver.erp_px_cat_g1v2
